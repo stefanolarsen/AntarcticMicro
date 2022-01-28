@@ -1,0 +1,76 @@
+---
+title: "Antartide"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(phyloseq)
+library(ape)
+
+knitr::opts_chunk$set(echo = TRUE, 
+                      message = FALSE,
+                      tidy = TRUE,
+                      fig.width = 10,
+                      fig.height = 6,
+                      warning = FALSE)
+```
+
+
+
+#Data import
+```{r data}
+#Sample data
+#metadati <- read_tsv("MARS_metadata.xlsx - Environmental2_c.tsv")
+metadati <- read_tsv("metadata - Foglio1.tsv")
+metadati <- metadati %>% 
+  mutate(SampleID_2=str_replace(SampleID,"Mars_","Mars-")) %>% 
+  mutate(Elevation=ifelse(`Elevation (m asl)`=="n/a",NA,`Elevation (m asl)`)) %>%
+  mutate(Elevation=as.numeric(Elevation)) %>%
+  mutate(Area=str_replace(Area,"  "," ")) %>%
+#  mutate(RockType=ifelse(`Type of rocks`=="Sandstone","Sandstone","Granite")) %>%
+  mutate(Sea_distance=ifelse(`Sea distance (km)`=="n/a",NA,as.numeric(`Sea distance (km)`))) %>% 
+  mutate(Rock_cat=`Rock categor`)
+
+# OTU Table
+#mult <- read_tsv("/Users/donatic/Mount/Machina/albanesed/projects/antarctica_2021/prok-cont/results/mult_table.tsv")
+mult <- read_tsv("mult_table.tsv")
+
+coverage <- tibble(SampleID=colnames(mult[3:ncol(mult)]),Tot_coverage=colSums(mult[3:ncol(mult)])) #%>%
+#  mutate(SampleID=str_replace(SampleID,"Mars-","Mars_"))
+#Add info on multiplicity
+metadati <- metadati %>%
+  left_join(coverage)
+#Taxonomy
+#Bacteria
+tax_b <-  read_tsv("bacteria_summary.tsv")
+tax_b <- tax_b %>%select(user_genome,classification)
+#Archea
+tax_a <-  read_tsv("archaea_summary.tsv")
+tax_a <- tax_a %>%select(user_genome,classification)
+tax <- rbind(tax_a,tax_b)
+tax <- tax %>% separate(classification,c("Domain","Phylum","Class","Order","Family","Genus","Species"),";")
+
+#Tree
+tree <- read.tree("gtdbtk.bac120.user_tree.tree")
+
+#Build the Phyloseq object
+otutable <- mult %>% select(!("Query comment" | "Query ID"))
+row_names <- mult$`Query ID`
+rownames(otutable) <- row_names
+otutable <- otu_table(otutable,taxa_are_row=T)
+
+taxtable <- tax %>% select(!(user_genome))
+row_names <- tax$user_genome
+rownames(taxtable) <- row_names
+taxtable <- tax_table(as.matrix(taxtable))
+
+sampledata <- as.data.frame(metadati)
+row.names(sampledata) <- sampledata$SampleID_2
+sampledata <- sample_data(sampledata)
+
+antartide <- phyloseq(otutable,taxtable,phy_tree=tree,sam_data=sampledata)
+```
+
+
+
