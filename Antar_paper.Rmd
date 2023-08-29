@@ -1,0 +1,867 @@
+---
+title: "Antar_paper"
+author: "SL"
+date: "2023-05-24"
+output: html_document
+---
+
+#########################################################################
+#*script with code associated only with analyses presented in the paper*
+########################################################################
+
+
+# The scipt works after the data are imported and the PS object created with *'Data import.Rmd', from Claudio*
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      message = FALSE,
+                      tidy = TRUE,
+                      fig.width = 5.5,
+                      fig.height = 3.5,
+                      warning = FALSE)
+```
+
+```{r}
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("phyloseq")
+```
+
+
+# load packs
+```{r tidy=TRUE, warning=FALSE}
+library("phyloseq")
+#install.packages('ecodist')
+library(ecodist)
+
+library("ggplot2")
+library("vegan")
+#install.packages('tidyverse')
+library("tidyverse")
+#library("broom")
+#library("contrast")
+library("knitr")
+install.packages('picante')
+library("picante")
+#library("emmeans")
+
+library("lme4")
+install.packages('iCAMP')
+library(iCAMP)
+library(reshape2)
+
+#install.packages("remotes")
+#remotes::install_github("vmikk/metagMisc")
+#library(metagMisc)
+install.packages('patchwork')
+library(patchwork)
+library(gt)
+install.packages('gtools')
+library(gtools)
+```
+
+```{r}
+theme_set(theme_bw())
+```
+
+
+
+# Th ephyloseq file
+```{r}
+ps
+```
+
+
+# Extract otu from raw ps (non rarefied)
+```{r}
+otu.raw=
+as(otu_table(ps), 'matrix')
+
+otu.raw=
+as.data.frame(as.matrix(t(otu.raw)))
+
+
+otu.raw=cbind.data.frame(SampleID=rownames(otu.raw), otu.raw)
+```
+
+
+
+# if needing to match the orderd of sampleID in metadati as in otu.tab
+```{r}
+metadati[order(match(metadati$Sample_name, otu.raw$SampleID)),]
+```
+
+## how is the distribution of reads in samples (coverage)
+```{r}
+summary(metadati$Tot_coverage)
+```
+
+
+#*these sites have no parallel in the otu table (no taxa?)*
+*attention to names with either '-' or '_'*
+```{r}
+
+# setdiff(metadati$SampleID_2, otu.raw$SampleID) 
+
+setdiff(metadati$SampleID, otu.raw$SampleID)
+```
+
+
+
+# combine sample info and raw otu
+*attention to names with either '-' or '_'*
+```{r}
+otu.raw=
+metadati %>% 
+right_join(otu.raw, by=c('SampleID_2'= 'SampleID'))
+```
+
+# creating vectors with reads and occurrence for each taxa
+```{r}
+sort.occur=sort(colSums( decostand(otu.raw[,-c(1:23)], 'pa')), decreasing = T)
+sort.reads=sort(colSums(otu.raw[,-c(1:23)]), decreasing = T)
+
+
+plot(sort.occur, type='l')
+plot(sort.reads, type='l')
+
+summary(sort.reads)
+```
+
+
+
+# test the rarefaction options
+*big differences in reads per sample, rarefying either drops many taxa or many samples*
+```{r}
+ps.rarefied = rarefy_even_depth(ps, rngseed=1, sample.size=2000, replace=F)
+```
+
+
+#subset otu and sample to get *at least otu with 10 counts and samples with >2 counts*
+*otu.raw2*
+```{r}
+# delete samples with just 2 reads
+otu.raw2=
+  otu.raw %>% 
+  filter(Tot_coverage >2)
+
+#subset otu with >9 reads , and recreate a df with subsetted taxa and sample info
+otu.raw2=
+  cbind(otu.raw2[,c(1:23)],
+  otu.raw2 %>% 
+  select(names(sort.reads[sort.reads>9]))
+  )
+
+```
+
+# *Remove the three samples from the Peninsula*
+```{r}
+otu.raw2=
+otu.raw2 %>% 
+  filter(Area != 'Antarctic Peninsula')
+```
+
+
+# Otu.raw2 still has two samples with no data; 
+# Perhaps due to species that were omitted in previous step
+```{r}
+which(rowSums(otu.raw2[,-c(1:23)])==0)
+```
+# remove the samples with no species
+```{r}
+otu.raw2=otu.raw2[-c(138, 174),]
+```
+
+# Ended up with this species and covariates table
+*178 samples X 2033 species*
+```{r}
+otu.raw2
+otu.raw2[,-c(1:23)] # exluding covariates
+```
+
+
+# samples of quartz / dolerite
+Mars-43
+```{r}
+otu.raw2 %>% 
+filter(!`Rocks_v2` %in% c('Granite', 'Sandstone')) 
+
+quartz_dol=c("Mars-43", "Mars-44", "Mars-45", "Mars-66")
+
+```
+
+
+
+## *If omitting the dolerite and quartz, then 174 samples!*
+```{r}
+otu.raw2 %>% 
+filter(`Rocks_v2` %in% c('Granite', 'Sandstone'))
+
+#or
+
+otu.raw2 %>% 
+  filter(!SampleID_2 %in% quartz_dol)
+
+```
+
+# Create the update *otu.raw3* data without dolerite / quartz
+```{r}
+otu.raw3=
+otu.raw2 %>% 
+  filter(!SampleID_2 %in% quartz_dol)
+```
+
+# export the 'otu table', with metadata
+```{r}
+
+write.csv(otu.raw3, "otu.raw3_tot.csv")
+
+write.csv(otu.raw3[,-c(1:23)], "otu.raw3_taxa.csv")
+
+write.csv(otu.raw3[,c(2,7,8,10,11,13,15,18,24:2056)], 'otu_raw3_genomes_metadata.csv')
+
+```
+
+```{r}
+table(otu.raw3$RockType)
+```
+
+# import metadata of bacteria
+```{r}
+#library(readxl)
+bacteria_summary <- read_excel("bacteria_summary.xlsx")
+```
+
+# the bacteria data, with taxa used in the analysis
+```{r}
+setdiff(bacteria_summary$user_genome, names(otu.raw3[,-c(1:23)]))
+
+setdiff(names(otu.raw3[,-c(1:23)]), bacteria_summary$user_genome)
+
+bacteria_summary_oturaw3=
+bacteria_summary %>% 
+  filter(user_genome %in% names(otu.raw3[,-c(1:23)]))
+
+
+```
+
+# export the bacteria summary
+```{r}
+write_csv(bacteria_summary_oturaw3, 'bacteria_summary_otu3.csv')
+```
+
+
+
+################################
+# Extract diversity measures ###
+###############################
+
+```{r}
+
+div.otu.raw2=cbind.data.frame(
+  otu.raw2[,c(1:23)],
+  Richness=apply(otu.raw2[,-c(1:23)], 1, function(x) vegan::renyi(x, scale=0, hill=T)),
+  HShannon=apply(otu.raw2[,-c(1:23)], 1, function(x) vegan::renyi(x, scale=1, hill=T)),
+  HSimpson=apply(otu.raw2[,-c(1:23)], 1, function(x) vegan::renyi(x, scale=2, hill=T))
+)
+
+```
+
+# plot of diversity. *FIG.1*
+# note: beta table for sub-communities has 175 sample - comes from 'Diversity_claudio.Rmd'
+```{r fig.width=6, fig.height=5}
+(div.otu.raw2 %>% as.data.frame() %>% 
+  filter(`Rocks_v2` %in% c('Granite', 'Sandstone')) %>% 
+  ggplot()+aes(`RockType`, Richness, col=RockType)+geom_boxplot()+xlab(NULL)+scale_color_manual(values=c('darkorange', 'darkslategray4'))+
+  geom_point(position=position_jitter(width = 0.1), size=1) +theme(legend.position ='none')  +
+  
+  div.otu.raw2 %>% as.data.frame() %>% 
+    filter(`Rocks_v2` %in% c('Granite', 'Sandstone')) %>% 
+  ggplot()+aes(Elevation, Richness)+geom_point(aes(col=RockType), size=1)+geom_smooth(aes(col=RockType), method='lm', linetype="dashed", se=F)+ylab(NULL)+scale_color_manual(values=c('darkorange', 'darkslategray4'))+
+  theme(legend.position ='none')+geom_smooth(col='grey40', se=T,  method='lm', linetype='dashed')) /
+  
+   beta %>% ggplot() +geom_point(aes(x=n,y=diversity,color=RockType), size=1)+theme_bw()+
+ ylab("Effective sub-communities") + xlab("Number of samples")+ylim(0,16)+xlim(0,100)+geom_smooth(aes(x=n,y=diversity,col=RockType), se=F, size=0.2)+
+  scale_color_manual(values=c('darkorange', 'darkslategray4'))+
+theme(legend.position = c(0.7, 0.19), legend.title = element_blank(), legend.background = element_rect(fill = "white", color = "grey50"))+guides(colour = guide_legend(nrow = 1))+
+  plot_layout(nrow = 2, heights = c(1,1.2)) +
+  plot_annotation(tag_levels = 'A')
+```
+
+```{r}
+pdf('Diversity_ms.pdf', w=5.5, h=4.4)
+(div.otu.raw2 %>% as.data.frame() %>% 
+  filter(`Rocks_v2` %in% c('Granite', 'Sandstone')) %>% 
+  ggplot()+aes(`RockType`, Richness, col=RockType)+geom_boxplot()+xlab(NULL)+scale_color_manual(values=c('darkorange', 'darkslategray4'))+
+  geom_point(position=position_jitter(width = 0.1), size=1) +theme(legend.position ='none')  +
+  
+  div.otu.raw2 %>% as.data.frame() %>% 
+    filter(`Rocks_v2` %in% c('Granite', 'Sandstone')) %>% 
+  ggplot()+aes(Elevation, Richness)+geom_point(aes(col=RockType), size=1)+geom_smooth(aes(col=RockType), method='lm', linetype="dashed", se=F)+ylab(NULL)+scale_color_manual(values=c('darkorange', 'darkslategray4'))+
+  theme(legend.position ='none')+geom_smooth(col='grey40', se=T,  method='lm', linetype='dashed')) /
+  
+   beta %>% ggplot() +geom_point(aes(x=n,y=diversity,color=RockType), size=1)+theme_bw()+
+ ylab("Effective sub-communities") + xlab("Number of samples")+ylim(0,16)+xlim(0,100)+geom_smooth(aes(x=n,y=diversity,col=RockType), se=F, size=0.2)+
+  scale_color_manual(values=c('darkorange', 'darkslategray4'))+
+theme(legend.position = c(0.7, 0.19), legend.title = element_blank(), legend.background = element_rect(fill = "white", color = "grey50"))+guides(colour = guide_legend(nrow = 1))+
+  plot_layout(nrow = 2, heights = c(1,1.2)) +
+  plot_annotation(tag_levels = 'A')
+
+dev.off()
+```
+
+
+```{r}
+
+div.otu.raw2=as.data.frame(div.otu.raw2)
+```
+
+
+# Models for richness difference between rocks 
+```{r}
+# Richness vs rock, using varIdent accounting for different variance between rocks
+
+rich.m1=gls(Richness ~ RockType, data=div.otu.raw2 %>%  filter(`Rocks_v2` %in% c('Granite', 'Sandstone')) )
+
+rich.m2=
+gls(Richness~ RockType, data=div.otu.raw2 %>%  filter(`Rocks_v2` %in% c('Granite', 'Sandstone')) , weights = varIdent(form=~1|RockType))
+
+anova(rich.m1 , rich.m2) # variable variance is more supported
+
+summary(rich.m2) # sandstone supporting -54 species
+
+# Shannon model
+shan.m2=
+gls(HShannon~ RockType, data=div.otu.raw2 %>%  filter(`Rocks_v2` %in% c('Granite', 'Sandstone')), weights = varIdent(form=~1|RockType))
+summary(shan.m2)
+
+
+```
+
+# model for richness vs elevation * rocks
+```{r}
+m0=gls(Richness~Elevation, data=div.otu.raw2 %>%  filter(`Rocks_v2` %in% c('Granite', 'Sandstone')) , weights = varIdent(form=~1|RockType))
+
+m1=gls(Richness~Elevation, data=div.otu.raw2 %>%  filter(`Rocks_v2` %in% c('Granite', 'Sandstone'))  )
+anova(m0, m1)
+
+#m0=gls(Richness~Elevation, data=div.otu.raw2 )  
+
+
+summary(m0) # elevation has no effect
+
+
+m=gls(Richness~Elevation, data=div.otu.raw2 %>%  filter(`Rocks_v2` %in% c('Granite', 'Sandstone')) , weights = varIdent(form=~1|RockType))
+
+
+# Interaction
+
+mx=(gls(Richness~Elevation*RockType, data=div.otu.raw2  %>%  filter(`Rocks_v2` %in% c('Granite', 'Sandstone')), weights = varIdent(form=~1|RockType)))
+
+# effect of rock type but not elevation
+summary(mx)
+
+
+```
+
+
+# Plot of Shannon vs Elevation and Rock type (Fig. S1)
+```{r}
+
+div.otu.raw2 %>% as.data.frame() %>% 
+  filter(`Rocks_v2` %in% c('Granite', 'Sandstone')) %>% 
+  ggplot()+aes(`RockType`, HShannon, col=RockType)+geom_boxplot()+xlab(NULL)+scale_color_manual(values=c('darkorange', 'darkslategray4'))+
+  geom_point(position=position_jitter(width = 0.1), size=1) +theme(legend.position ='none')+ylab('Hill-Shannon')
+
+  div.otu.raw2 %>% as.data.frame() %>% 
+    filter(`Rocks_v2` %in% c('Granite', 'Sandstone')) %>% 
+  ggplot()+aes(Elevation, HShannon)+geom_point(aes(col=RockType), size=1)+geom_smooth(aes(col=RockType), method='lm', linetype="dashed", se=F)+ylab(NULL)+scale_color_manual(values=c('darkorange', 'darkslategray4'))+ylab('Hill-Shannon')+
+  theme(legend.position ='none')+geom_smooth(col='grey40', se=T,  method='lm', linetype='dashed')
+
+
+
+```
+
+
+
+
+## *update phyloseq object*
+## Subset phyloseq data with sites and taxa in the otu.raw2
+*ps.raw2*
+```{r}
+# subset taxa and store in temporary ps objet
+ps.tmp=prune_taxa(taxa_names(ps) %in% names(otu.raw2[,-c(1:23)]), ps  )
+
+# Then subset samples to match otu.raw2
+ps.raw2=subset_samples(ps.tmp, SampleID_2 %in% otu.raw2$SampleID_2)
+
+```
+
+#ps.raw3 (no quartz)
+```{r}
+ps.tmp=prune_taxa(taxa_names(ps) %in% names(otu.raw3[,-c(1:23)]), ps  )
+
+# Then subset samples to match otu.raw2
+ps.raw3=subset_samples(ps.tmp, SampleID_2 %in% otu.raw3$SampleID_2)
+```
+
+
+
+# extract just the *environ data *
+#convert rock type to dummy variable, for niche difference analysis
+# add elevation for three samples (missing), taken from GIS inspection
+```{r}
+
+#names(otu.raw2)[6]='Rock_type'
+
+# create a df with elevation + sandstone and granite (as dummmy)
+env.data=
+otu.raw3[,c(2,7,9,10,11,12,18,19,21,21)]%>% 
+  mutate(dummy=1) %>% 
+  spread(RockType, value=dummy, fill=0) %>% 
+  select(SampleID_2, Elevation, Granite, Sandstone, Rocks_v2)
+
+env.data=as.data.frame(env.data)
+rownames(env.data)=otu.raw3$SampleID_2
+
+
+# Fill the missing Elevation data from GIS info
+env.data['Mars-82',]$Elevation=1000
+env.data['Mars-83',]$Elevation=1000
+env.data['Mars-84',]$Elevation=1000
+
+```
+
+
+# Extract niche differences (this step wants no NAs)
+Species pairwise difference in environmental preference (used for testing the phylogenetic signal)
+```{r}
+niche.dif=iCAMP::dniche(env = env.data[, c(2:4)], 
+                        comm =otu.raw2[,-c(1:23)],
+                        method = "niche.value",
+                        nworker = 4,out.dist=T, bigmemo=F,
+                        nd.wd="~/Documents/FEM_work/AntarcticMicro")
+
+
+```
+
+
+# Get the mean and variance of the env variables for each taxa using ADE4
+```{r}
+library(ade4)
+```
+
+# If we need the mean and variance of the env variables for each taxa using ADE4
+#excluding the dolerite/quartz samples
+```{r fig.height=7}
+xx=
+sco.distri(env.data[,2] ,
+           otu.raw3 %>% select(24:2056),
+            labels = NULL)
+
+elev_niche=
+sco.distri(env.data[,2],
+           otu.raw3  %>% select(24:2056),
+            labels = NULL)
+```
+
+
+# extract taxonomic table from otu.raw2
+```{r}
+tax.table.oturaw2=as.data.frame(as.matrix(tax_table(ps.raw2)))
+class(tax.table.oturaw2)
+
+tax.table.oturaw2$Phylum
+```
+
+# extract taxonomic table from otu.raw2
+```{r}
+tax.table.oturaw3=as.data.frame(as.matrix(tax_table(ps.raw3)))
+class(tax.table.oturaw3)
+
+tax.table.oturaw3
+```
+# export taxonomic table otu3
+```{r}
+write.csv(tax.table.oturaw3, "tax_table_otu3.csv")
+```
+
+
+
+# add the Phylum information on the sco.distri for altitude
+```{r}
+xx$Phylum=tax.table.oturaw3$Phylum[match(row.names(xx), row.names(tax.table.oturaw3))]
+
+elev_niche$Phylum=tax.table.oturaw3$Phylum[match(row.names(elev_niche), row.names(tax.table.oturaw3))]
+
+elev_niche$otu=row.names(elev_niche)
+
+unique(elev_niche$Phylum)
+
+xx %>% 
+  arrange(mean)
+
+xx$Class=tax.table.oturaw3$Class[match(row.names(xx), row.names(tax.table.oturaw3))]
+
+```
+
+# remove 'p__' in front of Phylum names
+```{r}
+
+elev_niche$Phylum=
+str_remove(elev_niche$Phylum, 'p__')
+```
+
+
+# *Plot elevation range and mean for each phyla (FIG. 2)*
+```{r fig.height=6, fig.width=6.5}
+
+ ggplot(data=elev_niche ,
+        aes(x=mean, y=reorder(otu, mean), xmin=(mean-sqrt(var)), xmax=(mean+sqrt(var))))+xlab('Elevation')+
+    geom_point(data=elev_niche %>% select(mean, var, otu), aes(x=mean, y=reorder(otu, mean), xmin=(mean-sqrt(var)), xmax=(mean+sqrt(var))),   size=1, shape=21, col='grey60')+geom_errorbarh(size=0.3, col='grey60')+ylab(NULL)+theme(axis.text.x = element_text(angle=45, vjust=0, hjust=0))+xlim(0,3400)+
+
+theme_classic()+
+  
+    geom_point(aes(col=Phylum ))+
+ geom_errorbarh(aes(col=Phylum), size=0.3)+ylab(NULL)+theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())+facet_wrap(~Phylum)+
+    theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+  
+  
+```
+# figure 2
+```{r}
+pdf('Fig.2_elevation.pdf', w=7, h=8)
+ ggplot(data=elev_niche ,
+        aes(x=mean, y=reorder(otu, mean), xmin=(mean-sqrt(var)), xmax=(mean+sqrt(var))))+xlab('Elevation')+
+    geom_point(data=elev_niche %>% select(mean, var, otu), aes(x=mean, y=reorder(otu, mean), xmin=(mean-sqrt(var)), xmax=(mean+sqrt(var))),   size=1, shape=21, col='grey60')+geom_errorbarh(size=0.3, col='grey60')+ylab(NULL)+theme(axis.text.x = element_text(angle=45, vjust=0, hjust=0))+xlim(0,3400)+
+
+theme_classic()+
+  
+    geom_point(aes(col=Phylum ))+
+ geom_errorbarh(aes(col=Phylum), size=0.3)+ylab(NULL)+theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())+facet_wrap(~Phylum)+
+    theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+ 
+ dev.off()
+```
+
+
+
+
+# Extract the phylo dist
+```{r}
+pd.raw2=cophenetic(phy_tree(ps.raw2))# or using the dataset with quartz/dolerite as well (no difference)
+pd.raw3=cophenetic(phy_tree(ps.raw3)) #
+
+```
+
+# Plot the mantel correlogram for altitude
+*some sig phylo signal with elevation* 
+# FIG SM3
+```{r}
+
+mantest.elev=
+mantel.correlog(as.dist(pd.raw2),as.dist(niche.dif$nd$Elevation), nperm = 200 )
+
+mantest.elev3=
+mantel.correlog(as.dist(pd.raw3),as.dist(niche.dif$nd$Elevation), nperm = 200 )
+
+plot(mantest.elev3, alpha=.09) 
+title('Correlogram Elevation')
+```
+
+
+
+# First test of assembly (no bins) (qpen)
+*takes 1h for 250 random*
+```{r}
+qp_raw2=qpen(comm= otu.raw2[,-c(1:23)], pd=pd.raw2, 
+            tree=phy_tree(ps.raw2),
+             rand.time=250, nworker=4)
+```
+
+# Create elevation distance (pairwise) quantile groups
+# add elevation distance quantile to qpen assembly
+```{r}
+qp_raw2$result=
+qp_raw2$result %>% 
+  mutate(elev_dist_quant=quantcut(qp_raw2$result$elev_dist, 3))
+```
+
+
+# Rename heterogeneous selection as variable selection
+```{r}
+qp_raw2$result %>% 
+ mutate(process= str_replace(process, "Heterogeneous", "Variable"))
+```
+
+```{r}
+qp_raw3=
+qp_raw2$result %>% filter(! sample1 %in% quartz_dol )
+```
+
+
+
+```{r}
+p1=
+qp_raw2$result  %>% filter(! sample1 %in% quartz_dol ) %>%  
+ filter(elev_dist_quant =="[0,300]") %>% 
+  mutate(process=as.factor(process)) %>% 
+  mutate(process= str_replace(process, "Heterogeneous", "Variable")) %>% 
+  mutate(process=factor(process, levels=c('Dispersal.Limitation', 'Variable.Selection','Homogeneous.Selection' , 'Homogenizing.Dispersal', 'Undominated'))) %>%
+  count(process) %>% 
+  mutate(pct=n/sum(n)) %>% 
+  ggplot+ aes(x='',y=pct, fill=process)+ geom_bar(stat='identity') +xlab('0-300 m')+ylab(NULL)+theme_bw()+
+  theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1))+
+  scale_fill_manual(values=c("seagreen", "orange", "blueviolet", "firebrick3", "grey70"))
+
+p2=
+  qp_raw2$result %>% filter(! sample1 %in% quartz_dol ) %>% 
+ filter(elev_dist_quant =="(300,828]") %>% 
+  mutate(process=as.factor(process)) %>% 
+  mutate(process= str_replace(process, "Heterogeneous", "Variable")) %>% 
+  mutate(process=factor(process, levels=c('Dispersal.Limitation', 'Variable.Selection','Homogeneous.Selection' , 'Homogenizing.Dispersal', 'Undominated'))) %>%
+  count(process) %>% 
+  mutate(pct=n/sum(n)) %>% 
+  ggplot+ aes(x='',y=pct, fill=process)+ geom_bar(stat='identity') +xlab('300-830 m')+ylab(NULL)+theme_bw()+
+  theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1))+
+  scale_fill_manual(values=c("seagreen", "orange", "blueviolet", "firebrick3", "grey70"))
+
+p3=
+    qp_raw2$result %>% filter(! sample1 %in% quartz_dol ) %>% 
+ filter(elev_dist_quant =="(828,3.4e+03]") %>% 
+  mutate(process=as.factor(process)) %>% 
+  mutate(process= str_replace(process, "Heterogeneous", "Variable")) %>% 
+  mutate(process=factor(process, levels=c('Dispersal.Limitation', 'Variable.Selection','Homogeneous.Selection' , 'Homogenizing.Dispersal', 'Undominated'))) %>%
+  count(process) %>% 
+  mutate(pct=n/sum(n)) %>% 
+  ggplot+ aes(x='',y=pct, fill=process)+ geom_bar(stat='identity') +xlab('830 - 3400 m')+ylab(NULL)+theme_bw()+
+  theme(axis.text.x = element_text(angle=45, vjust = 1, hjust = 1))+
+  scale_fill_manual(values=c("seagreen", "orange", "blueviolet", "firebrick3", "grey70"))
+  
+```
+
+# Plotting assembly process over elevation distances
+ # *Figure 3
+```{r}
+#detach("package:patchwork", unload = TRUE)
+
+#library(cowplot)
+install.packages('ggpubr')
+library(ggpubr)
+library(grid)
+
+zio=
+ggarrange(p1, p2, p3,  ncol=3, nrow=1, common.legend = TRUE, legend="right")
+
+
+annotate_figure(zio, bottom = textGrob("Elevation difference             ", gp = gpar(cex = 1.3)))
+```
+
+```{r fig.width=6, fig.height=5}
+
+annotate_figure(zio, bottom = textGrob("Elevation distance                ", gp = gpar(cex = 1.3)))
+```
+# Export Fig.3
+```{r}
+pdf('Assembly_ms', w=6, h=5)
+annotate_figure(zio, bottom = textGrob("Pairwise elevation difference                   ", gp = gpar(cex = 1.3)))
+dev.off()
+
+```
+
+
+
+# Distance matrices of elevation and geography
+#assign coords and crs to the bio data
+```{r}
+div.otu.sf <- div.otu.raw2 %>% 
+   st_as_sf(coords = c("Longitude", "Latitude"))
+
+div.otu.sf <- st_set_crs(div.otu.sf, 4326)
+div.otu.sf <- st_transform(div.otu.sf, crs = target_crs)
+div.otu.sf.jitt=st_jitter(div.otu.sf, amount = 1000)
+
+# these are the point coords in transformed CRS
+coords_crs=st_coordinates(div.otu.sf)
+ coords_crs=as.data.frame(coords_crs)                    
+
+rownames(coords_crs)=div.otu.sf$SampleID_2
+ 
+# write.csv(coords_crs, 'coords_crs.csv')
+
+
+```
+
+# *exlcuding quartz (not run for now; nothing changes and requires rerunning bNTI) *
+```{r}
+coords_crs3=
+coords_crs[!(rownames(coords_crs) %in% quartz_dol),]
+```
+
+
+
+# The elevation distance as df
+```{r}
+# add the missing elevation data to the coords
+coords_crs['Mars-82',]$elevation=1000
+coords_crs['Mars-83',]$elevation=1000
+coords_crs['Mars-84',]$elevation=1000
+
+# create distance three column - add a simple col of 1s so that vegdist report the sample names too
+elev_dist.df=
+coords_crs %>% 
+  mutate(dummy=1) %>% 
+  select(elevation, dummy) %>% 
+vegdist( 'euclidean') %>% 
+  dist.3col()
+
+elev_dist.df$name1_name2=paste(elev_dist.df$name1, elev_dist.df$name2, sep='_')
+
+```
+
+# The elevation distance as matrix
+```{r}
+elev_dist=
+  coords_crs %>% 
+  mutate(dummy=1) %>% 
+  select(elevation, dummy) %>% 
+vegdist( 'euclidean')
+
+elev_dist3=
+  coords_crs3 %>% 
+  mutate(dummy=1) %>% 
+  select(elevation, dummy) %>% 
+vegdist( 'euclidean')
+
+
+
+```
+
+
+# Euclidean dist as df
+```{r}
+euc_dist.df=
+coords_crs %>% 
+  select(X,Y) %>% 
+vegdist( 'euclidean') %>% 
+  dist.3col()
+
+euc_dist.df$name1_name2=paste(euc_dist.df$name1, euc_dist.df$name2, sep='_')
+
+```
+
+# Euclidean dist as matrix
+```{r}
+euc_dist=
+coords_crs %>% 
+  select(X,Y) %>% 
+vegdist( 'euclidean')
+
+euc_dist3=
+coords_crs3 %>% 
+  select(X,Y) %>% 
+vegdist( 'euclidean')
+
+
+
+```
+
+
+## RUN the bNTI with direct command
+
+```{r}
+bNTI.dist=
+bNTIn.p(comm= otu.raw2[,-c(1:23)], dis=pd.raw2, 
+            rand=240, nworker=4, output.bMNTD = T)
+
+bnti_dist3=
+bNTI.dist$index[!(rownames(bNTI.dist$index) %in% quartz_dol), !(colnames(bNTI.dist$index) %in% quartz_dol )]
+
+bNTI.dist$index[, !(colnames(bNTI.dist$index) %in% quartz_dol )]
+
+```
+
+
+# Add the *elevation distance and euclidean distance* to the assembly process and beta-nRTI dist
+```{r}
+qp_raw2$result$sample1_semple2=paste(qp_raw2$result$sample1, qp_raw2$result$sample2, sep='_')
+qp_raw2$result$elev_dist=elev_dist.df$dis[match(qp_raw2$result$sample1_semple2, elev_dist.df$name1_name2)]
+qp_raw2$result$euc_dist= euc_dist.df$dis[match(qp_raw2$result$sample1_semple2, euc_dist.df$name1_name2)]
+
+```
+
+
+
+# Add the roch type to the qpen_process
+```{r}
+
+qp_raw2$result$rock1=sampleinfo$RockType[match(qp_raw2$result$sample1, sampleinfo$SampleID_2)]
+qp_raw2$result$rock2=sampleinfo$RockType[match(qp_raw2$result$sample2, sampleinfo$SampleID_2)]
+qp_raw2$result$rock1_rock2=paste(qp_raw2$result$rock1, qp_raw2$result$rock2, sep="_")
+qp_raw2$result$rock1_rock2=as.factor(qp_raw2$result$rock1_rock2)
+
+table(qp_raw2$result$rock1_rock2)
+
+```
+
+# same vs different rocks
+```{r}
+qp_raw2$result$rock_pair=NA
+qp_raw2$result$rock_pair=if_else(qp_raw2$result$rock1_rock2 %in% c('Sandstone_Sandstone', 'Granite_Granite', 'Quartz_Quartz'), 'Same_Rock', 'Different_Rock' )
+```
+
+
+
+# Plot Figure 4
+```{r fig.width=5, fig.height=4.5}
+
+p_elev=
+qp_raw2$result %>% filter(! sample1 %in% quartz_dol ) %>% 
+  filter(bNTI<15) %>% 
+  ggplot()+aes(elev_dist, bNTI)+geom_point(aes(col=rock_pair),alpha=0.2)+geom_smooth(aes(col=rock_pair),method='lm')+
+  geom_hline(yintercept = c(-2,2), col='black', linetype='dashed')+theme(legend.position = 'top', legend.title = element_blank())+xlab('Elevation difference (m)')+
+  theme(legend.position = 'top')
+
+p_geog=
+qp_raw2$result %>% filter(! sample1 %in% quartz_dol ) %>% 
+  filter(bNTI<15) %>% 
+  ggplot()+aes(euc_dist, bNTI)+geom_point(aes(col=rock_pair),alpha=0.2)+geom_smooth(aes(col=rock_pair),method='lm')+
+  geom_hline(yintercept = c(-2,2), col='black', linetype='dashed')+theme(legend.position = 'top', legend.title = element_blank())+xlab('Geographic distance (m)')+
+  theme(legend.position = 'top')
+
+
+```
+
+
+```{r}
+pdf('Fig4_bNTI_dist.pdf', w=6, h=4.3)
+p_elev+
+  p_geog+plot_layout(guides='collect') & theme(legend.position = 'top')
+
+dev.off()
+```
+
+
+# Regression on distance matrices
+
+```{r}
+install.packages('ecodist')
+library(ecodist)
+install.packages('MDMR')
+library(MDMR)
+```
+
+
+```{r}
+MRM(as.vector(as.dist(bNTI.dist$index)) ~ as.vector(elev_dist)) # R2=0.048 p=0.001
+MRM(as.vector(as.dist(bNTI.dist$index)) ~ as.vector(euc_dist)) # R2=0.016 p=0.003
+MRM(as.vector(as.dist(bNTI.dist$index)) ~ as.vector(elev_dist)+ as.vector(euc_dist)) # R2=0.053 - 
+```
+# MRM excluding the four quartz sites
+```{r}
+MRM(as.vector(as.dist(bnti_dist3)) ~ as.vector(elev_dist3)) # R2=0.048 p=0.001
+MRM(as.vector(as.dist(bnti_dist3)) ~ as.vector(euc_dist3)) # R2=0.016 p=0.003
+MRM(as.vector(as.dist(bnti_dist3)) ~ as.vector(elev_dist3)+ as.vector(euc_dist3)) # R2=0.053 - 
+```
+
