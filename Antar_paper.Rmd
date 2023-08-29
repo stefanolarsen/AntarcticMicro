@@ -548,6 +548,8 @@ theme_classic()+
 
 
 
+
+
 # Extract the phylo dist
 ```{r}
 pd.raw2=cophenetic(phy_tree(ps.raw2))# or using the dataset with quartz/dolerite as well (no difference)
