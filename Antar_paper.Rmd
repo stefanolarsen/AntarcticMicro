@@ -311,6 +311,30 @@ theme(legend.position = c(0.7, 0.19), legend.title = element_blank(), legend.bac
 dev.off()
 ```
 
+# Fig 1 tiff
+```{r}
+tiff('Fig1_Diversity_ms.tiff', 'in', w=5.5, h=4.4, res=300)
+(div.otu.raw2 %>% as.data.frame() %>% 
+  filter(`Rocks_v2` %in% c('Granite', 'Sandstone')) %>% 
+  ggplot()+aes(`RockType`, Richness, col=RockType)+geom_boxplot()+xlab(NULL)+scale_color_manual(values=c('darkorange', 'darkslategray4'))+
+  geom_point(position=position_jitter(width = 0.1), size=1) +theme(legend.position ='none')  +
+  
+  div.otu.raw2 %>% as.data.frame() %>% 
+    filter(`Rocks_v2` %in% c('Granite', 'Sandstone')) %>% 
+  ggplot()+aes(Elevation, Richness)+geom_point(aes(col=RockType), size=1)+geom_smooth(aes(col=RockType), method='lm', linetype="dashed", se=F)+ylab(NULL)+scale_color_manual(values=c('darkorange', 'darkslategray4'))+
+  theme(legend.position ='none')+geom_smooth(col='grey40', se=T,  method='lm', linetype='dashed')) /
+  
+   beta %>% ggplot() +geom_point(aes(x=n,y=diversity,color=RockType), size=1)+theme_bw()+
+ ylab("Effective sub-communities") + xlab("Number of samples")+ylim(0,16)+xlim(0,100)+geom_smooth(aes(x=n,y=diversity,col=RockType), se=F, size=0.2)+
+  scale_color_manual(values=c('darkorange', 'darkslategray4'))+
+theme(legend.position = c(0.7, 0.19), legend.title = element_blank(), legend.background = element_rect(fill = "white", color = "grey50"))+guides(colour = guide_legend(nrow = 1))+
+  plot_layout(nrow = 2, heights = c(1,1.2)) +
+  plot_annotation(tag_levels = 'A')
+
+dev.off()
+```
+
+
 
 ```{r}
 
@@ -545,8 +569,23 @@ theme_classic()+
  dev.off()
 ```
 
+#fig2 tiff
 
+```{r}
 
+tiff('Fig.2_elevation.tiff', 'in' , res=300, w=7, h=8)
+ ggplot(data=elev_niche ,
+        aes(x=mean, y=reorder(otu, mean), xmin=(mean-sqrt(var)), xmax=(mean+sqrt(var))))+xlab('Elevation')+
+    geom_point(data=elev_niche %>% select(mean, var, otu), aes(x=mean, y=reorder(otu, mean), xmin=(mean-sqrt(var)), xmax=(mean+sqrt(var))),   size=1, shape=21, col='grey60')+geom_errorbarh(size=0.3, col='grey60')+ylab(NULL)+theme(axis.text.x = element_text(angle=45, vjust=0, hjust=0))+xlim(0,3400)+
+
+theme_classic()+
+  
+    geom_point(aes(col=Phylum ))+
+ geom_errorbarh(aes(col=Phylum), size=0.3)+ylab(NULL)+theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())+facet_wrap(~Phylum)+
+    theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+ 
+ dev.off()
+```
 
 
 
@@ -667,6 +706,15 @@ annotate_figure(zio, bottom = textGrob("Elevation distance                ", gp 
 # Export Fig.3
 ```{r}
 pdf('Assembly_ms', w=6, h=5)
+annotate_figure(zio, bottom = textGrob("Pairwise elevation difference                   ", gp = gpar(cex = 1.3)))
+dev.off()
+
+```
+
+
+# Export Fig.3 tiff
+```{r}
+tiff('Fig3_Assembly_ms.tiff', 'in', w=6, h=5, res=300)
 annotate_figure(zio, bottom = textGrob("Pairwise elevation difference                   ", gp = gpar(cex = 1.3)))
 dev.off()
 
@@ -837,12 +885,22 @@ qp_raw2$result %>% filter(! sample1 %in% quartz_dol ) %>%
 
 
 ```{r}
-pdf('Fig4_bNTI_dist.pdf', w=6, h=4.3)
+pdf('Fig4_bNTI_dist.pdf', w=6.5, h=4.3)
 p_elev+
   p_geog+plot_layout(guides='collect') & theme(legend.position = 'top')
 
 dev.off()
 ```
+
+# fig 4 tiff
+```{r}
+tiff('Fig4_bNTI_dist.tiff', width=6.5, height=4.3, res=300, 'in')
+p_elev+
+  p_geog+plot_layout(guides='collect') & theme(legend.position = 'top')
+
+dev.off()
+```
+
 
 
 # Regression on distance matrices
